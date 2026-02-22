@@ -1,0 +1,24 @@
+{
+  "name": "tcc-topojson",
+  "version": "1.0.0",
+  "description": "TopoJSON world map with 330 Travelers' Century Club destinations",
+  "main": "tcc-330.json",
+  "files": [
+    "tcc-330.json"
+  ],
+  "keywords": [
+    "topojson",
+    "geojson",
+    "world",
+    "map",
+    "tcc",
+    "travelers-century-club",
+    "countries",
+    "territories"
+  ],
+  "license": "CC-BY-4.0",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:rembish/tcc-topojson.git"
+  }
+}
