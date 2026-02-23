@@ -1,12 +1,41 @@
 """TCC destination definitions — 330 destinations with extraction strategies."""
 
+from __future__ import annotations
+
 from typing import Any
 
-# Each destination tuple: (tcc_index, name, region, iso_a2, iso_a3, iso_n3, sovereign, type)
-# sovereign: the sovereign state name (same as name for sovereign countries)
-# type: "country", "territory", "disputed", "subnational", "antarctic"
+from .types import TccDestination
 
-DESTINATIONS: list[tuple] = [
+# Each destination tuple fields (positional):
+#   [0] tcc_index : int          — TCC destination number (1-330)
+#   [1] name      : str          — TCC destination name
+#   [2] region    : str          — TCC region name
+#   [3] iso_a2    : str | None   — ISO 3166-1 alpha-2 code (None for sub-national)
+#   [4] iso_a3    : str | None   — ISO 3166-1 alpha-3 code (None for sub-national)
+#   [5] iso_n3    : int | None   — ISO 3166-1 numeric code (None for sub-national)
+#   [6] sovereign : str          — Sovereign state name
+#   [7] type      : str          — Feature type: "country" | "territory" | "disputed"
+#                                               | "subnational" | "antarctic"
+#
+# EXTRACTIONS dict fields (per-entry keys vary by strategy):
+#   strategy       : str   — Extraction strategy (see strategy comments below)
+#   adm0_a3        : str   — NE ADM0_A3 / SU_A3 code for the parent country
+#   su_a3          : str   — NE SU_A3 code (strategy="subunit")
+#   admin1         : list  — Province names to dissolve (strategy="admin1")
+#   subtract_admin1: list  — Province names to subtract (strategy="remainder")
+#   subtract_disputed: list — Disputed layer feature names to subtract
+#   merge_disputed : list  — Disputed layer feature names to merge in
+#   parent_adm0_a3 : str   — Parent country A3 code (strategy="island_bbox")
+#   parent_admin1  : str   — Parent province name (strategy="island_bbox")
+#   bbox           : tuple — (west, south, east, north) for bbox extraction
+#   side           : str   — "europe" or "asia" (strategy="clip")
+#   lon_west/lon_east: float — Sector bounds (strategy="antarctic")
+#   sectors        : list  — Multi-sector defs (strategy="antarctic")
+#   lat, lon       : float — Point coordinates (strategy="point")
+
+type _DestRow = tuple[int, str, str, str | None, str | None, int | None, str, str]
+
+DESTINATIONS: list[_DestRow] = [
     # === PACIFIC OCEAN (1-40) ===
     (1, "Austral Islands", "Pacific Ocean", None, None, None, "France", "territory"),
     (2, "Australia", "Pacific Ocean", "AU", "AUS", 36, "Australia", "country"),
@@ -35,7 +64,16 @@ DESTINATIONS: list[tuple] = [
     (25, "Ogasawara", "Pacific Ocean", None, None, None, "Japan", "territory"),
     (26, "Palau", "Pacific Ocean", "PW", "PLW", 585, "Palau", "country"),
     (27, "Papua New Guinea", "Pacific Ocean", "PG", "PNG", 598, "Papua New Guinea", "country"),
-    (28, "Papua New Guinea \u2013 Islands Region", "Pacific Ocean", None, None, None, "Papua New Guinea", "subnational"),
+    (
+        28,
+        "Papua New Guinea \u2013 Islands Region",
+        "Pacific Ocean",
+        None,
+        None,
+        None,
+        "Papua New Guinea",
+        "subnational",
+    ),
     (29, "Pitcairn Island", "Pacific Ocean", "PN", "PCN", 612, "United Kingdom", "territory"),
     (30, "Ryukyu Islands", "Pacific Ocean", None, None, None, "Japan", "subnational"),
     (31, "Samoa American", "Pacific Ocean", "AS", "ASM", 16, "United States", "territory"),
@@ -54,7 +92,16 @@ DESTINATIONS: list[tuple] = [
     (43, "Mexico", "North America", "MX", "MEX", 484, "Mexico", "country"),
     (44, "Prince Edward Island", "North America", None, None, None, "Canada", "subnational"),
     (45, "St. Pierre & Miquelon", "North America", "PM", "SPM", 666, "France", "territory"),
-    (46, "United States (Contiguous)", "North America", "US", "USA", 840, "United States", "country"),
+    (
+        46,
+        "United States (Contiguous)",
+        "North America",
+        "US",
+        "USA",
+        840,
+        "United States",
+        "country",
+    ),
     # === CENTRAL AMERICA (47-53) ===
     (47, "Belize", "Central America", "BZ", "BLZ", 84, "Belize", "country"),
     (48, "Costa Rica", "Central America", "CR", "CRI", 188, "Costa Rica", "country"),
@@ -103,7 +150,16 @@ DESTINATIONS: list[tuple] = [
     (89, "St. Kitts", "Caribbean", None, None, None, "Saint Kitts and Nevis", "subnational"),
     (90, "St. Lucia", "Caribbean", "LC", "LCA", 662, "Saint Lucia", "country"),
     (91, "St. Martin", "Caribbean", "MF", "MAF", 663, "France", "territory"),
-    (92, "St. Vincent & the Grenadines", "Caribbean", "VC", "VCT", 670, "Saint Vincent and the Grenadines", "country"),
+    (
+        92,
+        "St. Vincent & the Grenadines",
+        "Caribbean",
+        "VC",
+        "VCT",
+        670,
+        "Saint Vincent and the Grenadines",
+        "country",
+    ),
     (93, "San Andres & Providencia", "Caribbean", None, None, None, "Colombia", "subnational"),
     (94, "Sint Maarten", "Caribbean", "SX", "SXM", 534, "Netherlands", "territory"),
     (95, "Trinidad & Tobago", "Caribbean", "TT", "TTO", 780, "Trinidad and Tobago", "country"),
@@ -122,7 +178,16 @@ DESTINATIONS: list[tuple] = [
     (107, "Greenland", "Atlantic Ocean", "GL", "GRL", 304, "Denmark", "territory"),
     (108, "Iceland", "Atlantic Ocean", "IS", "ISL", 352, "Iceland", "country"),
     (109, "Madeira", "Atlantic Ocean", None, None, None, "Portugal", "subnational"),
-    (110, "South Georgia & the South Sandwich Islands", "Atlantic Ocean", "GS", "SGS", 239, "United Kingdom", "territory"),
+    (
+        110,
+        "South Georgia & the South Sandwich Islands",
+        "Atlantic Ocean",
+        "GS",
+        "SGS",
+        239,
+        "United Kingdom",
+        "territory",
+    ),
     (111, "St. Helena", "Atlantic Ocean", None, None, None, "United Kingdom", "territory"),
     (112, "Tristan da Cunha", "Atlantic Ocean", None, None, None, "United Kingdom", "territory"),
     # === EUROPE & MEDITERRANEAN (113-180) ===
@@ -133,15 +198,51 @@ DESTINATIONS: list[tuple] = [
     (117, "Balearic Islands", "Europe & Mediterranean", None, None, None, "Spain", "subnational"),
     (118, "Belarus", "Europe & Mediterranean", "BY", "BLR", 112, "Belarus", "country"),
     (119, "Belgium", "Europe & Mediterranean", "BE", "BEL", 56, "Belgium", "country"),
-    (120, "Bosnia & Herzegovina", "Europe & Mediterranean", "BA", "BIH", 70, "Bosnia and Herzegovina", "country"),
+    (
+        120,
+        "Bosnia & Herzegovina",
+        "Europe & Mediterranean",
+        "BA",
+        "BIH",
+        70,
+        "Bosnia and Herzegovina",
+        "country",
+    ),
     (121, "Bulgaria", "Europe & Mediterranean", "BG", "BGR", 100, "Bulgaria", "country"),
     (122, "Corsica", "Europe & Mediterranean", None, None, None, "France", "subnational"),
     (123, "Crete", "Europe & Mediterranean", None, None, None, "Greece", "subnational"),
     (124, "Croatia", "Europe & Mediterranean", "HR", "HRV", 191, "Croatia", "country"),
-    (125, "Cyprus British Sovereign Base Areas", "Europe & Mediterranean", None, None, None, "United Kingdom", "territory"),
+    (
+        125,
+        "Cyprus British Sovereign Base Areas",
+        "Europe & Mediterranean",
+        None,
+        None,
+        None,
+        "United Kingdom",
+        "territory",
+    ),
     (126, "Cyprus Republic", "Europe & Mediterranean", "CY", "CYP", 196, "Cyprus", "country"),
-    (127, "Cyprus Turkish Fed. State", "Europe & Mediterranean", None, None, None, "Cyprus", "disputed"),
-    (128, "Czech Republic", "Europe & Mediterranean", "CZ", "CZE", 203, "Czech Republic", "country"),
+    (
+        127,
+        "Cyprus Turkish Fed. State",
+        "Europe & Mediterranean",
+        None,
+        None,
+        None,
+        "Cyprus",
+        "disputed",
+    ),
+    (
+        128,
+        "Czech Republic",
+        "Europe & Mediterranean",
+        "CZ",
+        "CZE",
+        203,
+        "Czech Republic",
+        "country",
+    ),
     (129, "Denmark", "Europe & Mediterranean", "DK", "DNK", 208, "Denmark", "country"),
     (130, "England", "Europe & Mediterranean", None, None, None, "United Kingdom", "subnational"),
     (131, "Estonia", "Europe & Mediterranean", "EE", "EST", 233, "Estonia", "country"),
@@ -150,12 +251,39 @@ DESTINATIONS: list[tuple] = [
     (134, "Germany", "Europe & Mediterranean", "DE", "DEU", 276, "Germany", "country"),
     (135, "Gibraltar", "Europe & Mediterranean", "GI", "GIB", 292, "United Kingdom", "territory"),
     (136, "Greece", "Europe & Mediterranean", "GR", "GRC", 300, "Greece", "country"),
-    (137, "Greek Aegean Islands", "Europe & Mediterranean", None, None, None, "Greece", "subnational"),
-    (138, "Guernsey & Dependencies", "Europe & Mediterranean", "GG", "GGY", 831, "United Kingdom", "territory"),
+    (
+        137,
+        "Greek Aegean Islands",
+        "Europe & Mediterranean",
+        None,
+        None,
+        None,
+        "Greece",
+        "subnational",
+    ),
+    (
+        138,
+        "Guernsey & Dependencies",
+        "Europe & Mediterranean",
+        "GG",
+        "GGY",
+        831,
+        "United Kingdom",
+        "territory",
+    ),
     (139, "Hungary", "Europe & Mediterranean", "HU", "HUN", 348, "Hungary", "country"),
     (140, "Ionian Islands", "Europe & Mediterranean", None, None, None, "Greece", "subnational"),
     (141, "Ireland", "Europe & Mediterranean", "IE", "IRL", 372, "Ireland", "country"),
-    (142, "Ireland Northern", "Europe & Mediterranean", None, None, None, "United Kingdom", "subnational"),
+    (
+        142,
+        "Ireland Northern",
+        "Europe & Mediterranean",
+        None,
+        None,
+        None,
+        "United Kingdom",
+        "subnational",
+    ),
     (143, "Isle of Man", "Europe & Mediterranean", "IM", "IMN", 833, "United Kingdom", "territory"),
     (144, "Italy", "Europe & Mediterranean", "IT", "ITA", 380, "Italy", "country"),
     (145, "Jersey", "Europe & Mediterranean", "JE", "JEY", 832, "United Kingdom", "territory"),
@@ -171,7 +299,16 @@ DESTINATIONS: list[tuple] = [
     (155, "Monaco", "Europe & Mediterranean", "MC", "MCO", 492, "Monaco", "country"),
     (156, "Montenegro", "Europe & Mediterranean", "ME", "MNE", 499, "Montenegro", "country"),
     (157, "Netherlands", "Europe & Mediterranean", "NL", "NLD", 528, "Netherlands", "country"),
-    (158, "North Macedonia", "Europe & Mediterranean", "MK", "MKD", 807, "North Macedonia", "country"),
+    (
+        158,
+        "North Macedonia",
+        "Europe & Mediterranean",
+        "MK",
+        "MKD",
+        807,
+        "North Macedonia",
+        "country",
+    ),
     (159, "Norway", "Europe & Mediterranean", "NO", "NOR", 578, "Norway", "country"),
     (160, "Poland", "Europe & Mediterranean", "PL", "POL", 616, "Poland", "country"),
     (161, "Portugal", "Europe & Mediterranean", "PT", "PRT", 620, "Portugal", "country"),
@@ -186,7 +323,16 @@ DESTINATIONS: list[tuple] = [
     (170, "Slovenia", "Europe & Mediterranean", "SI", "SVN", 705, "Slovenia", "country"),
     (171, "Spain", "Europe & Mediterranean", "ES", "ESP", 724, "Spain", "country"),
     (172, "Spitsbergen", "Europe & Mediterranean", None, "SJM", 744, "Norway", "territory"),
-    (173, "Srpska", "Europe & Mediterranean", None, None, None, "Bosnia and Herzegovina", "subnational"),
+    (
+        173,
+        "Srpska",
+        "Europe & Mediterranean",
+        None,
+        None,
+        None,
+        "Bosnia and Herzegovina",
+        "subnational",
+    ),
     (174, "Sweden", "Europe & Mediterranean", "SE", "SWE", 752, "Sweden", "country"),
     (175, "Switzerland", "Europe & Mediterranean", "CH", "CHE", 756, "Switzerland", "country"),
     (176, "Transnistria", "Europe & Mediterranean", None, None, None, "Moldova", "disputed"),
@@ -196,8 +342,26 @@ DESTINATIONS: list[tuple] = [
     (180, "Wales", "Europe & Mediterranean", None, None, None, "United Kingdom", "subnational"),
     # === ANTARCTICA (181-187) ===
     (181, "Argentine Antarctica", "Antarctica", None, None, None, "Argentina", "antarctic"),
-    (182, "Australian Antarctic Territory", "Antarctica", None, None, None, "Australia", "antarctic"),
-    (183, "British Antarctic Territory", "Antarctica", None, None, None, "United Kingdom", "antarctic"),
+    (
+        182,
+        "Australian Antarctic Territory",
+        "Antarctica",
+        None,
+        None,
+        None,
+        "Australia",
+        "antarctic",
+    ),
+    (
+        183,
+        "British Antarctic Territory",
+        "Antarctica",
+        None,
+        None,
+        None,
+        "United Kingdom",
+        "antarctic",
+    ),
     (184, "Chilean Antarctic Territory", "Antarctica", None, None, None, "Chile", "antarctic"),
     (185, "French Antarctica", "Antarctica", None, None, None, "France", "antarctic"),
     (186, "New Zealand Antarctica", "Antarctica", None, None, None, "New Zealand", "antarctic"),
@@ -211,15 +375,51 @@ DESTINATIONS: list[tuple] = [
     (193, "Burundi", "Africa", "BI", "BDI", 108, "Burundi", "country"),
     (194, "Cabinda", "Africa", None, None, None, "Angola", "subnational"),
     (195, "Cameroon", "Africa", "CM", "CMR", 120, "Cameroon", "country"),
-    (196, "Central African Republic", "Africa", "CF", "CAF", 140, "Central African Republic", "country"),
+    (
+        196,
+        "Central African Republic",
+        "Africa",
+        "CF",
+        "CAF",
+        140,
+        "Central African Republic",
+        "country",
+    ),
     (197, "Chad", "Africa", "TD", "TCD", 148, "Chad", "country"),
-    (198, "Congo Democratic Republic", "Africa", "CD", "COD", 180, "Democratic Republic of the Congo", "country"),
+    (
+        198,
+        "Congo Democratic Republic",
+        "Africa",
+        "CD",
+        "COD",
+        180,
+        "Democratic Republic of the Congo",
+        "country",
+    ),
     (199, "Congo Republic", "Africa", "CG", "COG", 178, "Republic of the Congo", "country"),
     (200, "C\u00f4te d'Ivoire", "Africa", "CI", "CIV", 384, "C\u00f4te d'Ivoire", "country"),
     (201, "Djibouti", "Africa", "DJ", "DJI", 262, "Djibouti", "country"),
     (202, "Egypt in Africa", "Africa", "EG", "EGY", 818, "Egypt", "country"),
-    (203, "Equatorial Guinea Bioko", "Africa", None, None, None, "Equatorial Guinea", "subnational"),
-    (204, "Equatorial Guinea Rio Muni", "Africa", None, None, None, "Equatorial Guinea", "subnational"),
+    (
+        203,
+        "Equatorial Guinea Bioko",
+        "Africa",
+        None,
+        None,
+        None,
+        "Equatorial Guinea",
+        "subnational",
+    ),
+    (
+        204,
+        "Equatorial Guinea Rio Muni",
+        "Africa",
+        None,
+        None,
+        None,
+        "Equatorial Guinea",
+        "subnational",
+    ),
     (205, "Eritrea", "Africa", "ER", "ERI", 232, "Eritrea", "country"),
     (206, "Eswatini", "Africa", "SZ", "SWZ", 748, "Eswatini", "country"),
     (207, "Ethiopia", "Africa", "ET", "ETH", 231, "Ethiopia", "country"),
@@ -282,7 +482,16 @@ DESTINATIONS: list[tuple] = [
     (263, "Yemen", "Middle East", "YE", "YEM", 887, "Yemen", "country"),
     # === INDIAN OCEAN (264-278) ===
     (264, "Andaman-Nicobar Islands", "Indian Ocean", None, None, None, "India", "subnational"),
-    (265, "British Indian Ocean Territory", "Indian Ocean", "IO", "IOT", 86, "United Kingdom", "territory"),
+    (
+        265,
+        "British Indian Ocean Territory",
+        "Indian Ocean",
+        "IO",
+        "IOT",
+        86,
+        "United Kingdom",
+        "territory",
+    ),
     (266, "Christmas Island", "Indian Ocean", "CX", "CXR", 162, "Australia", "territory"),
     (267, "Cocos Islands", "Indian Ocean", "CC", "CCK", 166, "Australia", "territory"),
     (268, "Comoros", "Indian Ocean", "KM", "COM", 174, "Comoros", "country"),
@@ -803,10 +1012,23 @@ EXTRACTIONS: dict[int, dict[str, Any]] = {
         "strategy": "remainder",
         "adm0_a3": "ITA",
         "subtract_admin1": [
-            "Cagliari", "Carbonia-Iglesias", "Medio Campidano", "Nuoro",
-            "Ogliastra", "Olbia-Tempio", "Oristrano", "Sassari",
-            "Agrigento", "Caltanissetta", "Catania", "Enna",
-            "Messina", "Palermo", "Ragusa", "Siracusa", "Trapani",
+            "Cagliari",
+            "Carbonia-Iglesias",
+            "Medio Campidano",
+            "Nuoro",
+            "Ogliastra",
+            "Olbia-Tempio",
+            "Oristrano",
+            "Sassari",
+            "Agrigento",
+            "Caltanissetta",
+            "Catania",
+            "Enna",
+            "Messina",
+            "Palermo",
+            "Ragusa",
+            "Siracusa",
+            "Trapani",
         ],
     },
     # 145 - Jersey: direct (JEY)
@@ -867,8 +1089,14 @@ EXTRACTIONS: dict[int, dict[str, Any]] = {
         "strategy": "admin1",
         "adm0_a3": "ITA",
         "admin1": [
-            "Cagliari", "Carbonia-Iglesias", "Medio Campidano", "Nuoro",
-            "Ogliastra", "Olbia-Tempio", "Oristrano", "Sassari",
+            "Cagliari",
+            "Carbonia-Iglesias",
+            "Medio Campidano",
+            "Nuoro",
+            "Ogliastra",
+            "Olbia-Tempio",
+            "Oristrano",
+            "Sassari",
         ],
     },
     # 166 - Scotland: subunit from map_subunits
@@ -882,8 +1110,15 @@ EXTRACTIONS: dict[int, dict[str, Any]] = {
         "strategy": "admin1",
         "adm0_a3": "ITA",
         "admin1": [
-            "Agrigento", "Caltanissetta", "Catania", "Enna",
-            "Messina", "Palermo", "Ragusa", "Siracusa", "Trapani",
+            "Agrigento",
+            "Caltanissetta",
+            "Catania",
+            "Enna",
+            "Messina",
+            "Palermo",
+            "Ragusa",
+            "Siracusa",
+            "Trapani",
         ],
     },
     # 169 - Slovakia: direct (SVK)
@@ -1455,11 +1690,19 @@ EXTRACTIONS: dict[int, dict[str, Any]] = {
 }
 
 
-def get_destinations() -> list[dict[str, Any]]:
-    """Return all 330 destinations as dicts with merged extraction config."""
-    results = []
+def get_destinations() -> list[TccDestination]:
+    """Return all 330 destinations as dicts with merged extraction config.
+
+    Each dict contains the base destination fields from ``DESTINATIONS``
+    plus any strategy-specific keys from ``EXTRACTIONS``.  Destinations not
+    listed in ``EXTRACTIONS`` receive ``{"strategy": "direct"}`` as the default.
+
+    Returns:
+        List of 330 merged destination config dicts, one per TCC entry.
+    """
+    results: list[TccDestination] = []
     for idx, name, region, a2, a3, n3, sovereign, dtype in DESTINATIONS:
-        d = {
+        d: TccDestination = {
             "tcc_index": idx,
             "name": name,
             "region": region,

@@ -1,5 +1,7 @@
 """Download Natural Earth 10m shapefiles and Trubetskoy Europe-Asia boundary."""
 
+from __future__ import annotations
+
 import io
 import zipfile
 from pathlib import Path
@@ -24,7 +26,13 @@ TRUBETSKOY_URL = (
 
 
 def download_ne_dataset(name: str) -> None:
-    """Download and extract a Natural Earth shapefile zip."""
+    """Download and extract a Natural Earth shapefile zip.
+
+    Skips the download if the ``.shp`` file already exists in ``DATA_DIR``.
+
+    Args:
+        name: Dataset basename without extension, e.g. ``ne_10m_admin_0_map_subunits``.
+    """
     target = DATA_DIR / f"{name}.shp"
     if target.exists():
         print(f"  {name} — already exists, skipping")
@@ -41,7 +49,10 @@ def download_ne_dataset(name: str) -> None:
 
 
 def download_boundary() -> None:
-    """Download the Trubetskoy Europe-Asia boundary GeoJSON."""
+    """Download the Trubetskoy Europe-Asia boundary GeoJSON.
+
+    Skips the download if ``europe_asia_boundary.geojson`` already exists in ``DATA_DIR``.
+    """
     target = DATA_DIR / "europe_asia_boundary.geojson"
     if target.exists():
         print("  Europe-Asia boundary — already exists, skipping")
@@ -55,6 +66,7 @@ def download_boundary() -> None:
 
 
 def main() -> None:
+    """Download all source datasets to ``DATA_DIR``."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     print("Downloading source data...")
 

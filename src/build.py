@@ -3,29 +3,40 @@
 Loads source data, runs all extractors, and outputs merged.geojson.
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import geopandas as gpd
 
-from .destinations import get_destinations
 from .category_a import extract_direct, extract_subunit
-from .category_b import extract_admin1, extract_remainder, extract_disputed_remainder
+from .category_b import extract_admin1, extract_disputed_remainder, extract_remainder
 from .category_c import (
     extract_clip,
     extract_disputed,
-    extract_island_bbox,
     extract_group_remainder,
+    extract_island_bbox,
     generate_antarctic_wedge,
     generate_point,
 )
+from .destinations import get_destinations
+
+if TYPE_CHECKING:
+    from .types import TccDestination, TccFeature
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 
 
-def load_data():
-    """Load all source GeoDataFrames."""
+def load_data() -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """Load all source GeoDataFrames.
+
+    Returns:
+        A 4-tuple of ``(subunits, units, admin1, disputed)`` GeoDataFrames loaded
+        from the Natural Earth shapefiles in ``DATA_DIR``.
+    """
     print("Loading source data...")
     subunits = gpd.read_file(DATA_DIR / "ne_10m_admin_0_map_subunits.shp")
     units = gpd.read_file(DATA_DIR / "ne_10m_admin_0_map_units.shp")
@@ -40,29 +51,51 @@ def load_data():
     return subunits, units, admin1, disputed
 
 
-def build_features(subunits, units, admin1, disputed):
-    """Build all 330 TCC features."""
+def build_features(
+    subunits: gpd.GeoDataFrame,
+    units: gpd.GeoDataFrame,
+    admin1: gpd.GeoDataFrame,
+    disputed: gpd.GeoDataFrame,
+) -> dict[int, TccFeature]:
+    """Build all 330 TCC features.
+
+    Uses a two-pass approach: first builds all features whose extraction
+    does not depend on previously built features; then builds
+    ``group_remainder`` features that subtract already-built geometries.
+
+    Args:
+        subunits: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units: Natural Earth admin_0_map_units GeoDataFrame.
+        admin1: Natural Earth admin_1_states_provinces GeoDataFrame.
+        disputed: Natural Earth breakaway_disputed_areas GeoDataFrame.
+
+    Returns:
+        Dict mapping tcc_index to GeoJSON Feature dict for all successfully
+        built features.
+    """
     destinations = get_destinations()
     print(f"\nBuilding {len(destinations)} TCC destinations...")
 
     # Load Antarctica coastline for clipping wedge sectors
-    antarctica_geom = None
+    antarctica_geom: Any | None = None
     ata = units[units["ADM0_A3"] == "ATA"]
     if len(ata) > 0:
         antarctica_geom = ata.dissolve().geometry.iloc[0]
 
-    built = {}  # tcc_index -> feature
-    deferred = []  # destinations that depend on other built features
+    built: dict[int, TccFeature] = {}  # tcc_index -> feature
+    deferred: list[TccDestination] = []  # destinations that depend on other built features
 
     # First pass: build all non-dependent features
     for dest in destinations:
-        strategy = dest.get("strategy", "direct")
+        strategy: str = dest.get("strategy", "direct")
 
         if strategy == "group_remainder":
             deferred.append(dest)
             continue
 
-        feature = _extract_feature(dest, strategy, subunits, units, admin1, disputed, built, antarctica_geom)
+        feature = _extract_feature(
+            dest, strategy, subunits, units, admin1, disputed, built, antarctica_geom
+        )
 
         if feature:
             built[dest["tcc_index"]] = feature
@@ -80,8 +113,44 @@ def build_features(subunits, units, admin1, disputed):
     return built
 
 
-def _extract_feature(dest, strategy, subunits, units, admin1, disputed, built, antarctica_geom=None):
-    """Dispatch to the appropriate extraction function based on strategy."""
+def _extract_feature(
+    dest: TccDestination,
+    strategy: str,
+    subunits: gpd.GeoDataFrame,
+    units: gpd.GeoDataFrame,
+    admin1: gpd.GeoDataFrame,
+    disputed: gpd.GeoDataFrame,
+    built: dict[int, TccFeature],
+    antarctica_geom: Any | None = None,
+) -> TccFeature | None:
+    """Dispatch to the appropriate extraction function based on strategy.
+
+    Strategy routing:
+
+    - ``"direct"``            → :func:`~category_a.extract_direct`
+    - ``"subunit"``           → :func:`~category_a.extract_subunit`
+    - ``"admin1"``            → :func:`~category_b.extract_admin1`
+    - ``"remainder"``         → :func:`~category_b.extract_remainder`
+    - ``"disputed_remainder"``/``"disputed_subtract"`` → :func:`~category_b.extract_disputed_remainder`
+    - ``"clip"``              → :func:`~category_c.extract_clip`
+    - ``"disputed"``          → :func:`~category_c.extract_disputed`
+    - ``"island_bbox"``       → :func:`~category_c.extract_island_bbox`
+    - ``"antarctic"``         → :func:`~category_c.generate_antarctic_wedge`
+    - ``"point"``             → :func:`~category_c.generate_point`
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        strategy: Extraction strategy string from the config.
+        subunits: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units: Natural Earth admin_0_map_units GeoDataFrame.
+        admin1: Natural Earth admin_1_states_provinces GeoDataFrame.
+        disputed: Natural Earth breakaway_disputed_areas GeoDataFrame.
+        built: Dict of already-built features keyed by tcc_index.
+        antarctica_geom: Shapely geometry for Antarctica coastline, or None.
+
+    Returns:
+        A GeoJSON Feature dict, or None if extraction fails.
+    """
     idx = dest["tcc_index"]
     name = dest["name"]
 
@@ -120,8 +189,13 @@ def _extract_feature(dest, strategy, subunits, units, admin1, disputed, built, a
         return None
 
 
-def write_geojson(features, output_path):
-    """Write features dict to a GeoJSON FeatureCollection."""
+def write_geojson(features: dict[int, TccFeature], output_path: Path) -> None:
+    """Write features dict to a GeoJSON FeatureCollection.
+
+    Args:
+        features: Dict mapping tcc_index to GeoJSON Feature dict.
+        output_path: Destination file path (parent directories created if needed).
+    """
     # Sort by tcc_index
     sorted_features = [features[i] for i in sorted(features.keys())]
 
@@ -138,7 +212,8 @@ def write_geojson(features, output_path):
     print(f"\nWrote {len(sorted_features)} features to {output_path} ({size_mb:.1f} MB)")
 
 
-def main():
+def main() -> None:
+    """Orchestrate the full build pipeline."""
     subunits, units, admin1, disputed = load_data()
     features = build_features(subunits, units, admin1, disputed)
 

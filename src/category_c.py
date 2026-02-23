@@ -4,25 +4,48 @@ Handles transcontinental clips, disputed territories, island extractions,
 Antarctic wedges, and point markers.
 """
 
-import math
+from __future__ import annotations
 
-from shapely.geometry import Point, Polygon, MultiPolygon, mapping
+import math
+from typing import TYPE_CHECKING, Any
+
+from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 
-from .boundary import clip_to_europe, clip_to_asia
+from .boundary import clip_to_asia, clip_to_europe
 from .utils import (
     extract_polygons_by_bbox,
-    subtract_polygons_by_bbox,
-    to_feature,
+    get_country_geom,
     make_properties,
+    to_feature,
 )
 
+if TYPE_CHECKING:
+    import geopandas as gpd
 
-def extract_clip(dest, subunits_gdf, units_gdf, built=None):
+    from .types import Bbox, TccDestination, TccFeature
+
+
+def extract_clip(
+    dest: TccDestination,
+    subunits_gdf: gpd.GeoDataFrame,
+    units_gdf: gpd.GeoDataFrame,
+    built: dict[int, TccFeature] | None = None,
+) -> TccFeature | None:
     """Clip a country polygon with the Europe-Asia boundary.
 
     Used for Russia and Turkey transcontinental splits.
     Optionally subtracts already-built features listed in subtract_indices.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        subunits_gdf: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units_gdf: Natural Earth admin_0_map_units GeoDataFrame.
+        built: Dict of already-built features keyed by tcc_index; used to
+            subtract other TCC destinations from the clip result.
+
+    Returns:
+        A GeoJSON Feature dict, or None if clipping fails or produces an empty result.
     """
     adm0 = dest.get("adm0_a3")
     side = dest.get("side")
@@ -31,7 +54,7 @@ def extract_clip(dest, subunits_gdf, units_gdf, built=None):
         return None
 
     # Get country geometry
-    country_geom = _get_country_geom(adm0, subunits_gdf, units_gdf)
+    country_geom = get_country_geom(adm0, subunits_gdf, units_gdf)
     if country_geom is None:
         print(f"  WARNING: Could not find {adm0} for clip")
         return None
@@ -57,19 +80,18 @@ def extract_clip(dest, subunits_gdf, units_gdf, built=None):
             asia_result = country_geom.difference(result)
             strays = _collect_parts_in_lon(asia_result, lo, hi)
             if strays:
-                result = unary_union([result] + strays)
+                result = unary_union([result, *strays])
         else:
             # Asia sheds parts in the lon range (they belong to Europe)
             keep, _ = _split_parts_by_lon(result, lo, hi)
             if keep:
                 result = unary_union(keep)
-            else:
-                result = result
 
     # Subtract other TCC features if specified
-    subtract_indices = dest.get("subtract_indices", [])
+    subtract_indices: list[int] = dest.get("subtract_indices", [])
     if subtract_indices and built:
-        from shapely.geometry import shape as shp
+        from shapely.geometry import shape as shp  # noqa: PLC0415
+
         subtract_geoms = []
         for idx in subtract_indices:
             feat = built.get(idx)
@@ -85,7 +107,7 @@ def extract_clip(dest, subunits_gdf, units_gdf, built=None):
                 result = result.buffer(0)
 
     # Subtract NE subunits by SU_A3 code (e.g. Crimea from Russia)
-    subtract_su = dest.get("subtract_su_a3", [])
+    subtract_su: list[str] = dest.get("subtract_su_a3", [])
     if subtract_su:
         subtract_geoms = []
         for su_code in subtract_su:
@@ -105,10 +127,21 @@ def extract_clip(dest, subunits_gdf, units_gdf, built=None):
     return to_feature(result, make_properties(dest))
 
 
-def extract_disputed(dest, disputed_gdf):
-    """Extract a feature from NE breakaway_disputed_areas layer."""
-    ne_name = dest.get("ne_name", dest["name"])
-    also_merge = dest.get("also_merge", [])
+def extract_disputed(
+    dest: TccDestination,
+    disputed_gdf: gpd.GeoDataFrame,
+) -> TccFeature | None:
+    """Extract a feature from NE breakaway_disputed_areas layer.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        disputed_gdf: Natural Earth breakaway_disputed_areas GeoDataFrame.
+
+    Returns:
+        A GeoJSON Feature dict, or None if the disputed feature is not found.
+    """
+    ne_name: str = dest.get("ne_name", dest["name"])
+    also_merge: list[str] = dest.get("also_merge", [])
 
     geom = _find_disputed_geom(ne_name, disputed_gdf)
     if geom is None:
@@ -124,28 +157,51 @@ def extract_disputed(dest, disputed_gdf):
     return to_feature(geom, make_properties(dest))
 
 
-def _find_disputed_geom(name, disputed_gdf):
-    """Find a geometry from the disputed layer by name."""
+def _find_disputed_geom(name: str, disputed_gdf: gpd.GeoDataFrame) -> Any | None:
+    """Find a geometry from the disputed layer by name.
+
+    Searches across NAME, BRK_NAME, NAME_LONG, and ADMIN fields using a
+    case-insensitive substring match.
+
+    Args:
+        name: Name (or partial name) to search for.
+        disputed_gdf: Natural Earth breakaway_disputed_areas GeoDataFrame.
+
+    Returns:
+        A dissolved shapely geometry, or None if not found.
+    """
     for field in ["NAME", "BRK_NAME", "NAME_LONG", "ADMIN"]:
         if field not in disputed_gdf.columns:
             continue
-        matches = disputed_gdf[
-            disputed_gdf[field].str.lower().str.contains(name.lower(), na=False)
-        ]
+        matches = disputed_gdf[disputed_gdf[field].str.lower().str.contains(name.lower(), na=False)]
         if len(matches) > 0:
             return matches.dissolve().geometry.iloc[0]
     return None
 
 
-def extract_island_bbox(dest, subunits_gdf, units_gdf, admin1_gdf=None):
+def extract_island_bbox(
+    dest: TccDestination,
+    subunits_gdf: gpd.GeoDataFrame,
+    units_gdf: gpd.GeoDataFrame,
+    admin1_gdf: gpd.GeoDataFrame | None = None,
+) -> TccFeature | None:
     """Extract island polygons from a parent feature by bounding box.
 
     Finds the parent feature, then extracts individual polygon rings
     whose centroids fall within the specified bbox.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        subunits_gdf: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units_gdf: Natural Earth admin_0_map_units GeoDataFrame.
+        admin1_gdf: Natural Earth admin_1_states_provinces GeoDataFrame, or None.
+
+    Returns:
+        A GeoJSON Feature dict, or None if the parent or bbox polygons are not found.
     """
-    bbox = dest.get("bbox")
-    parent_adm0 = dest.get("parent_adm0") or dest.get("parent_adm0_a3")
-    parent_admin1 = dest.get("parent_admin1")
+    bbox: Bbox | None = dest.get("bbox")
+    parent_adm0: str | None = dest.get("parent_adm0") or dest.get("parent_adm0_a3")
+    parent_admin1: str | None = dest.get("parent_admin1")
 
     if not bbox:
         return None
@@ -154,7 +210,7 @@ def extract_island_bbox(dest, subunits_gdf, units_gdf, admin1_gdf=None):
     if parent_admin1 and admin1_gdf is not None:
         parent_geom = _get_admin1_geom(parent_adm0, parent_admin1, admin1_gdf)
     elif parent_adm0:
-        parent_geom = _get_country_geom(parent_adm0, subunits_gdf, units_gdf)
+        parent_geom = get_country_geom(parent_adm0, subunits_gdf, units_gdf)
     else:
         return None
 
@@ -170,19 +226,34 @@ def extract_island_bbox(dest, subunits_gdf, units_gdf, admin1_gdf=None):
     return to_feature(result, make_properties(dest))
 
 
-def extract_group_remainder(dest, subunits_gdf, units_gdf, built_features):
+def extract_group_remainder(
+    dest: TccDestination,
+    subunits_gdf: gpd.GeoDataFrame,
+    units_gdf: gpd.GeoDataFrame,
+    built_features: dict[int, TccFeature],
+) -> TccFeature | None:
     """Extract a feature that is the remainder after subtracting other TCC destinations.
 
     Takes the parent admin_0 feature and subtracts geometries of already-built
     TCC destinations specified by subtract_indices.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        subunits_gdf: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units_gdf: Natural Earth admin_0_map_units GeoDataFrame.
+        built_features: Dict of already-built features keyed by tcc_index.
+
+    Returns:
+        A GeoJSON Feature dict, or None if the country geometry is not found
+        or the remainder is empty.
     """
     adm0 = dest.get("adm0_a3")
-    subtract_indices = dest.get("subtract_indices", [])
+    subtract_indices: list[int] = dest.get("subtract_indices", [])
 
     if not adm0:
         return None
 
-    country_geom = _get_country_geom(adm0, subunits_gdf, units_gdf)
+    country_geom = get_country_geom(adm0, subunits_gdf, units_gdf)
     if country_geom is None:
         return None
 
@@ -193,7 +264,8 @@ def extract_group_remainder(dest, subunits_gdf, units_gdf, built_features):
     for idx in subtract_indices:
         feat = built_features.get(idx)
         if feat:
-            from shapely.geometry import shape
+            from shapely.geometry import shape  # noqa: PLC0415
+
             subtract_geoms.append(shape(feat["geometry"]))
 
     if subtract_geoms:
@@ -209,27 +281,39 @@ def extract_group_remainder(dest, subunits_gdf, units_gdf, built_features):
     return to_feature(country_geom, make_properties(dest))
 
 
-def generate_antarctic_wedge(dest, antarctica_geom=None):
+def generate_antarctic_wedge(
+    dest: TccDestination,
+    antarctica_geom: Any | None = None,
+) -> TccFeature | None:
     """Generate an Antarctic sector clipped to the real coastline.
 
     Creates a wedge polygon between the specified longitudes, then
     intersects it with the actual Antarctica geometry from Natural Earth
     so the result follows the real coastline.
+
+    Args:
+        dest: Merged destination config dict.  Must contain ``lon_west`` and
+            ``lon_east``, or a ``sectors`` list of ``{lon_west, lon_east}`` dicts.
+            Optional ``lat_north`` defaults to -60.
+        antarctica_geom: Shapely geometry for Antarctica (from NE units layer),
+            used to clip the generated wedge to the real coastline.  If None,
+            the raw wedge polygon is returned.
+
+    Returns:
+        A GeoJSON Feature dict, or None if no sector geometry could be generated.
     """
-    lat_north = dest.get("lat_north", -60)
-    lat_south = -90
-    sectors = dest.get("sectors")
+    lat_north: float = dest.get("lat_north", -60)
+    lat_south = -90.0
+    sectors: list[dict[str, float]] | None = dest.get("sectors")
 
     # Multi-sector territories (e.g., Australian Antarctic Territory)
     if sectors:
-        parts = []
-        for sector in sectors:
-            parts.append(_make_wedge(sector["lon_west"], sector["lon_east"], lat_north, lat_south))
+        parts = [_make_wedge(s["lon_west"], s["lon_east"], lat_north, lat_south) for s in sectors]
         wedge = unary_union(parts) if len(parts) > 1 else parts[0]
     else:
         # Single sector
-        lon_west = dest.get("lon_west")
-        lon_east = dest.get("lon_east")
+        lon_west: float | None = dest.get("lon_west")
+        lon_east: float | None = dest.get("lon_east")
 
         if lon_west is None or lon_east is None:
             return None
@@ -256,10 +340,21 @@ def generate_antarctic_wedge(dest, antarctica_geom=None):
     return to_feature(result, make_properties(dest))
 
 
-def generate_point(dest):
-    """Generate a Point feature for tiny islands."""
-    lat = dest.get("lat")
-    lon = dest.get("lon")
+def generate_point(dest: TccDestination) -> TccFeature | None:
+    """Generate a Point feature for tiny islands.
+
+    Used for destinations too small for meaningful polygons at web scale
+    (e.g., Midway, Wake Island, Tokelau, Niue, Nauru, Tuvalu).
+
+    Args:
+        dest: Merged destination config dict.  Must contain ``lat`` and ``lon`` keys.
+
+    Returns:
+        A GeoJSON Feature dict with ``is_point=True`` in its properties,
+        or None if ``lat`` or ``lon`` are missing.
+    """
+    lat: float | None = dest.get("lat")
+    lon: float | None = dest.get("lon")
 
     if lat is None or lon is None:
         return None
@@ -270,9 +365,27 @@ def generate_point(dest):
     return to_feature(point, props)
 
 
-def _make_wedge(lon_west, lon_east, lat_north, lat_south, n_points=60):
-    """Create a wedge polygon from the South Pole to lat_north."""
-    coords = []
+def _make_wedge(
+    lon_west: float,
+    lon_east: float,
+    lat_north: float,
+    lat_south: float,
+    n_points: int = 60,
+) -> Polygon:
+    """Create a wedge polygon from the South Pole to lat_north.
+
+    Args:
+        lon_west: Western longitude bound (degrees).
+        lon_east: Eastern longitude bound (degrees).
+        lat_north: Northern latitude bound (degrees, e.g. -60).
+        lat_south: Southern latitude bound (degrees, e.g. -90).
+        n_points: Number of points along the northern arc for smoothness.
+
+    Returns:
+        A ``Polygon`` wedge from ``lat_south`` to ``lat_north`` between the
+        two longitudes.
+    """
+    coords: list[tuple[float, float]] = []
 
     # Northern arc from west to east
     for i in range(n_points + 1):
@@ -289,9 +402,18 @@ def _make_wedge(lon_west, lon_east, lat_north, lat_south, n_points=60):
     return Polygon(coords)
 
 
-def _collect_parts_in_lon(geom, lo, hi):
-    """Return polygon parts whose centroid longitude falls within [lo, hi]."""
-    parts = []
+def _collect_parts_in_lon(geom: Polygon | MultiPolygon, lo: float, hi: float) -> list[Polygon]:
+    """Return polygon parts whose centroid longitude falls within ``[lo, hi]``.
+
+    Args:
+        geom: A ``Polygon`` or ``MultiPolygon`` to inspect.
+        lo: Western longitude bound (inclusive).
+        hi: Eastern longitude bound (inclusive).
+
+    Returns:
+        List of polygon parts whose centroid.x is in ``[lo, hi]``.
+    """
+    parts: list[Polygon] = []
     if isinstance(geom, Polygon):
         if lo <= geom.centroid.x <= hi:
             parts.append(geom)
@@ -302,14 +424,24 @@ def _collect_parts_in_lon(geom, lo, hi):
     return parts
 
 
-def _split_parts_by_lon(geom, lo, hi):
+def _split_parts_by_lon(
+    geom: Polygon | MultiPolygon,
+    lo: float,
+    hi: float,
+) -> tuple[list[Polygon], list[Polygon]]:
     """Split a geometry into parts outside vs inside a longitude range.
 
-    Returns (keep, shed) where keep has centroids outside [lo, hi]
-    and shed has centroids inside [lo, hi].
+    Args:
+        geom: A ``Polygon`` or ``MultiPolygon`` to split.
+        lo: Western longitude bound (inclusive).
+        hi: Eastern longitude bound (inclusive).
+
+    Returns:
+        A ``(keep, shed)`` tuple where ``keep`` contains parts whose centroid.x
+        is outside ``[lo, hi]`` and ``shed`` contains parts inside ``[lo, hi]``.
     """
-    keep = []
-    shed = []
+    keep: list[Polygon] = []
+    shed: list[Polygon] = []
     if isinstance(geom, Polygon):
         if lo <= geom.centroid.x <= hi:
             shed.append(geom)
@@ -324,21 +456,22 @@ def _split_parts_by_lon(geom, lo, hi):
     return keep, shed
 
 
-def _get_country_geom(adm0_a3, subunits_gdf, units_gdf):
-    """Get the full country geometry from admin_0 layers."""
-    for gdf in [subunits_gdf, units_gdf]:
-        for field in ["ADM0_A3", "SU_A3", "GU_A3", "ISO_A3"]:
-            if field not in gdf.columns:
-                continue
-            matches = gdf[gdf[field] == adm0_a3]
-            if len(matches) > 0:
-                return matches.dissolve().geometry.iloc[0]
-    return None
+def _get_admin1_geom(
+    adm0_a3: str | None,
+    admin1_name: str,
+    admin1_gdf: gpd.GeoDataFrame,
+) -> Any | None:
+    """Get an admin1 geometry by country code and province name.
 
+    Args:
+        adm0_a3: Three-letter country A3 code to filter on, or None to skip filtering.
+        admin1_name: Province name to match (case-insensitive exact match).
+        admin1_gdf: Natural Earth admin_1_states_provinces GeoDataFrame.
 
-def _get_admin1_geom(adm0_a3, admin1_name, admin1_gdf):
-    """Get an admin1 geometry by country code and province name."""
-    country = admin1_gdf[admin1_gdf["adm0_a3"] == adm0_a3]
+    Returns:
+        A dissolved shapely geometry, or None if not found.
+    """
+    country = admin1_gdf[admin1_gdf["adm0_a3"] == adm0_a3] if adm0_a3 else admin1_gdf
 
     for field in ["name", "name_en", "NAME", "NAME_EN"]:
         if field not in country.columns:

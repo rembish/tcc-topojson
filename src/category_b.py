@@ -4,20 +4,42 @@ Selects admin_1 provinces, dissolves them, and optionally subtracts
 from a parent country polygon.
 """
 
-import geopandas as gpd
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from shapely.ops import unary_union
 
-from .utils import to_feature, make_properties
+from .utils import get_country_geom, make_properties, to_feature
+
+if TYPE_CHECKING:
+    import geopandas as gpd
+
+    from .types import TccDestination, TccFeature
 
 
-def extract_admin1(dest, admin1_gdf, subunits_gdf=None, units_gdf=None):
+def extract_admin1(
+    dest: TccDestination,
+    admin1_gdf: gpd.GeoDataFrame,
+    subunits_gdf: gpd.GeoDataFrame | None = None,
+    units_gdf: gpd.GeoDataFrame | None = None,
+) -> TccFeature | None:
     """Select and dissolve admin_1 provinces into a single feature.
 
-    Uses adm0_a3 to filter the country, then matches province names
-    from the admin1 list.
+    Uses ``adm0_a3`` to filter the country, then matches province names
+    from the ``admin1`` list.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        admin1_gdf: Natural Earth admin_1_states_provinces GeoDataFrame.
+        subunits_gdf: admin_0_map_subunits GeoDataFrame (unused; kept for API symmetry).
+        units_gdf: admin_0_map_units GeoDataFrame (unused; kept for API symmetry).
+
+    Returns:
+        A GeoJSON Feature dict, or None if no matching provinces were found.
     """
     adm0 = dest.get("adm0_a3")
-    admin1_names = dest.get("admin1", [])
+    admin1_names: list[str] = dest.get("admin1", [])
 
     if not adm0 or not admin1_names:
         return None
@@ -32,30 +54,48 @@ def extract_admin1(dest, admin1_gdf, subunits_gdf=None, units_gdf=None):
     matched = _match_provinces(country_admin1, admin1_names)
 
     if len(matched) == 0:
-        print(f"  WARNING: No admin1 matches for {dest['name']} "
-              f"(adm0={adm0}, names={admin1_names})")
+        print(
+            f"  WARNING: No admin1 matches for {dest['name']} "
+            f"(adm0={adm0}, names={admin1_names})"
+        )
         return None
 
     geom = matched.dissolve().geometry.iloc[0]
     return to_feature(geom, make_properties(dest))
 
 
-def extract_remainder(dest, admin1_gdf, subunits_gdf, units_gdf, disputed_gdf=None):
+def extract_remainder(
+    dest: TccDestination,
+    admin1_gdf: gpd.GeoDataFrame,
+    subunits_gdf: gpd.GeoDataFrame,
+    units_gdf: gpd.GeoDataFrame,
+    disputed_gdf: gpd.GeoDataFrame | None = None,
+) -> TccFeature | None:
     """Extract a country polygon minus specified admin_1 provinces.
 
     Gets the full country geometry from admin_0, then subtracts the
     dissolved geometry of specified admin1 provinces.  Also subtracts
     disputed areas listed in subtract_disputed, if present.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        admin1_gdf: Natural Earth admin_1_states_provinces GeoDataFrame.
+        subunits_gdf: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units_gdf: Natural Earth admin_0_map_units GeoDataFrame.
+        disputed_gdf: Natural Earth breakaway_disputed_areas GeoDataFrame, or None.
+
+    Returns:
+        A GeoJSON Feature dict, or None if the country geometry or subtraction fails.
     """
     adm0 = dest.get("adm0_a3")
-    subtract_names = dest.get("subtract_admin1", [])
-    subtract_disputed = dest.get("subtract_disputed", [])
+    subtract_names: list[str] = dest.get("subtract_admin1", [])
+    subtract_disputed: list[str] = dest.get("subtract_disputed", [])
 
     if not adm0:
         return None
 
     # Get the full country geometry from admin_0
-    country_geom = _get_country_geom(adm0, subunits_gdf, units_gdf)
+    country_geom = get_country_geom(adm0, subunits_gdf, units_gdf)
     if country_geom is None:
         print(f"  WARNING: Could not find country {adm0} for remainder")
         return None
@@ -88,7 +128,7 @@ def extract_remainder(dest, admin1_gdf, subunits_gdf, units_gdf, disputed_gdf=No
                     break
 
     # Merge disputed areas into result
-    merge_disputed = dest.get("merge_disputed", [])
+    merge_disputed: list[str] = dest.get("merge_disputed", [])
     if merge_disputed and disputed_gdf is not None:
         for disp_name in merge_disputed:
             for field in ["NAME", "BRK_NAME", "NAME_LONG"]:
@@ -111,18 +151,34 @@ def extract_remainder(dest, admin1_gdf, subunits_gdf, units_gdf, disputed_gdf=No
     return to_feature(result, make_properties(dest))
 
 
-def extract_disputed_remainder(dest, admin1_gdf, subunits_gdf, units_gdf, disputed_gdf):
+def extract_disputed_remainder(
+    dest: TccDestination,
+    admin1_gdf: gpd.GeoDataFrame,
+    subunits_gdf: gpd.GeoDataFrame,
+    units_gdf: gpd.GeoDataFrame,
+    disputed_gdf: gpd.GeoDataFrame,
+) -> TccFeature | None:
     """Extract a country polygon minus disputed territories.
 
-    Like extract_remainder but subtracts features from the disputed layer.
+    Like ``extract_remainder`` but subtracts features from the disputed layer.
+
+    Args:
+        dest: Merged destination config dict from ``get_destinations()``.
+        admin1_gdf: Natural Earth admin_1_states_provinces GeoDataFrame (unused).
+        subunits_gdf: Natural Earth admin_0_map_subunits GeoDataFrame.
+        units_gdf: Natural Earth admin_0_map_units GeoDataFrame.
+        disputed_gdf: Natural Earth breakaway_disputed_areas GeoDataFrame.
+
+    Returns:
+        A GeoJSON Feature dict, or None if the country geometry could not be found.
     """
     adm0 = dest.get("adm0_a3")
-    subtract_disputed = dest.get("subtract_disputed", [])
+    subtract_disputed: list[str] = dest.get("subtract_disputed", [])
 
     if not adm0:
         return None
 
-    country_geom = _get_country_geom(adm0, subunits_gdf, units_gdf)
+    country_geom = get_country_geom(adm0, subunits_gdf, units_gdf)
     if country_geom is None:
         return None
 
@@ -151,15 +207,24 @@ def extract_disputed_remainder(dest, admin1_gdf, subunits_gdf, units_gdf, disput
     return to_feature(country_geom, make_properties(dest))
 
 
-def _match_provinces(admin1_gdf, names):
+def _match_provinces(admin1_gdf: gpd.GeoDataFrame, names: list[str]) -> gpd.GeoDataFrame:
     """Match admin1 provinces by name (case-insensitive, with fallbacks).
 
     Accumulates matches across multiple name fields so that provinces
     whose names contain diacritics can be found via whichever field
     stores the unaccented variant.
+
+    Performs exact match first; falls back to substring (``contains``) match.
+
+    Args:
+        admin1_gdf: Country-filtered admin_1 GeoDataFrame.
+        names: Province names to match (case-insensitive).
+
+    Returns:
+        A GeoDataFrame of matched rows (may be empty if no match found).
     """
     name_lower = [n.lower() for n in names]
-    matched_idx = set()
+    matched_idx: set[int] = set()
 
     # Exact match — accumulate across all name fields
     for field in ["name", "name_en", "NAME", "NAME_EN"]:
@@ -175,8 +240,10 @@ def _match_provinces(admin1_gdf, names):
     for field in ["name", "name_en", "NAME", "NAME_EN"]:
         if field not in admin1_gdf.columns:
             continue
-        mask = admin1_gdf[field].str.lower().apply(
-            lambda x: any(n in str(x) for n in name_lower) if x else False
+        mask = (
+            admin1_gdf[field]
+            .str.lower()
+            .apply(lambda x: any(n in str(x) for n in name_lower) if x else False)
         )
         matched_idx.update(admin1_gdf.index[mask])
 
@@ -184,15 +251,3 @@ def _match_provinces(admin1_gdf, names):
         return admin1_gdf.loc[list(matched_idx)]
 
     return admin1_gdf.iloc[0:0]  # empty
-
-
-def _get_country_geom(adm0_a3, subunits_gdf, units_gdf):
-    """Get the full country geometry from admin_0 layers."""
-    for gdf in [subunits_gdf, units_gdf]:
-        for field in ["ADM0_A3", "SU_A3", "GU_A3", "ISO_A3"]:
-            if field not in gdf.columns:
-                continue
-            matches = gdf[gdf[field] == adm0_a3]
-            if len(matches) > 0:
-                return matches.dissolve().geometry.iloc[0]
-    return None
