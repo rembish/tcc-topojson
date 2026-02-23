@@ -42,6 +42,22 @@
   }
   #info strong { color: #fff; }
 
+  #toggle {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(10, 10, 30, 0.88); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 8px 10px; z-index: 50;
+    display: flex; gap: 6px;
+  }
+  .toggle-btn {
+    background: transparent; border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px; color: #aaa; cursor: pointer;
+    font-size: 12px; padding: 5px 14px; transition: all 0.15s;
+  }
+  .toggle-btn:hover { border-color: rgba(255,255,255,0.4); color: #ddd; }
+  .toggle-btn.active {
+    background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.5); color: #fff;
+  }
+
   #loading {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     color: #888; font-size: 16px; z-index: 200;
@@ -52,6 +68,10 @@
 
 <div id="loading">Loading TCC-330 TopoJSON...</div>
 <div id="tooltip"></div>
+<div id="toggle">
+  <button class="toggle-btn active" id="btn-full"    onclick="switchFile('output/tcc-330.json',         'btn-full'   )">Full</button>
+  <button class="toggle-btn"        id="btn-markers" onclick="switchFile('output/tcc-330-markers.json', 'btn-markers')">Markers</button>
+</div>
 <div id="legend"></div>
 <div id="info"></div>
 
@@ -74,24 +94,7 @@
     "Asia":                     "#ffca28"
   };
 
-  // Load TopoJSON
-  let topology;
-  try {
-    const resp = await fetch("output/tcc-330.json");
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    topology = await resp.json();
-  } catch (e) {
-    document.getElementById("loading").textContent = `Failed to load: ${e.message}`;
-    return;
-  }
-  document.getElementById("loading").style.display = "none";
-
-  // Extract features from all objects
-  const firstKey = Object.keys(topology.objects)[0];
-  const allFeatures = topojson.feature(topology, topology.objects[firstKey]).features;
-  const polygonFeatures = allFeatures;
-
-  // Setup SVG
+  // Setup SVG (once)
   const width = window.innerWidth;
   const height = window.innerHeight;
 
@@ -99,30 +102,27 @@
     .attr("width", width)
     .attr("height", height);
 
-  const projection = d3.geoNaturalEarth1()
-    .fitExtent([[20, 20], [width - 20, height - 20]], { type: "FeatureCollection", features: polygonFeatures });
-
-  const path = d3.geoPath().projection(projection);
-
-  // Zoom
   const g = svg.append("g");
+
+  // Zoom (once)
   const zoom = d3.zoom()
     .scaleExtent([1, 20])
     .on("zoom", (e) => g.attr("transform", e.transform));
   svg.call(zoom);
 
-  // Graticule
-  g.append("path")
+  // Projection — initialized after first load so we can fitExtent
+  let projection = null;
+  let path = null;
+
+  // Graticule + sphere (drawn once, stay behind features)
+  const graticuleNode = g.append("path")
     .datum(d3.geoGraticule10())
-    .attr("d", path)
     .attr("fill", "none")
     .attr("stroke", "rgba(255,255,255,0.06)")
     .attr("stroke-width", 0.5);
 
-  // Sphere outline
-  g.append("path")
+  const sphereNode = g.append("path")
     .datum({ type: "Sphere" })
-    .attr("d", path)
     .attr("fill", "none")
     .attr("stroke", "rgba(255,255,255,0.12)")
     .attr("stroke-width", 0.8);
@@ -139,6 +139,7 @@
       <div class="tt-row">Type: <span>${p.type}</span></div>
       <div class="tt-row">TCC #: <span>${p.tcc_index}</span></div>
       ${p.iso_a2 ? `<div class="tt-row">ISO: <span>${p.iso_a2}</span></div>` : ""}
+      ${p.area_km2 != null ? `<div class="tt-row">Area: <span>${p.area_km2.toLocaleString()} km²</span></div>` : ""}
     `);
     moveTooltip(event);
   }
@@ -156,40 +157,120 @@
     tooltip.style("display", "none");
   }
 
-  // Draw polygons
-  g.selectAll(".land")
-    .data(polygonFeatures)
-    .join("path")
-    .attr("class", "land")
-    .attr("d", path)
-    .attr("fill", d => regionColors[d.properties.region] || "#666")
-    .attr("fill-opacity", 0.7)
-    .on("mouseenter", showTooltip)
-    .on("mousemove", moveTooltip)
-    .on("mouseleave", hideTooltip);
+  // Main render function — loads a topology URL and re-renders features
+  async function loadAndRender(url) {
+    document.getElementById("loading").style.display = "block";
+    document.getElementById("loading").textContent = "Loading…";
 
-  // Legend
-  const legendEl = document.getElementById("legend");
-  let legendHTML = "<h3>TCC Regions</h3>";
-  const regionCounts = {};
-  allFeatures.forEach(f => {
-    const r = f.properties.region;
-    regionCounts[r] = (regionCounts[r] || 0) + 1;
-  });
-  for (const [region, color] of Object.entries(regionColors)) {
-    const count = regionCounts[region] || 0;
-    legendHTML += `<div class="legend-item">
-      <div class="legend-swatch" style="background:${color}"></div>
-      <span>${region} (${count})</span>
-    </div>`;
+    let topology;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      topology = await resp.json();
+    } catch (e) {
+      document.getElementById("loading").textContent = `Failed to load: ${e.message}`;
+      return;
+    }
+    document.getElementById("loading").style.display = "none";
+
+    const allFeatures = Object.values(topology.objects)
+      .flatMap(obj => topojson.feature(topology, obj).features);
+
+    const polygonFeatures = allFeatures.filter(
+      f => f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
+    );
+    const pointFeatures = allFeatures.filter(
+      f => f.geometry && f.geometry.type === "Point"
+    );
+
+    // Initialize projection on first load using polygon extents
+    if (!projection) {
+      projection = d3.geoNaturalEarth1()
+        .fitExtent([[20, 20], [width - 20, height - 20]], {
+          type: "FeatureCollection",
+          features: polygonFeatures.length > 0 ? polygonFeatures : allFeatures
+        });
+      path = d3.geoPath().projection(projection);
+      graticuleNode.attr("d", path);
+      sphereNode.attr("d", path);
+    }
+
+    // Remove previous feature layers (keep graticule + sphere which are first two children)
+    g.selectAll(".land").remove();
+    g.selectAll(".point-marker").remove();
+    hideTooltip();
+
+    // Draw polygons
+    g.selectAll(".land")
+      .data(polygonFeatures)
+      .join("path")
+      .attr("class", "land")
+      .attr("d", path)
+      .attr("fill", d => regionColors[d.properties.region] || "#666")
+      .attr("fill-opacity", 0.7)
+      .on("mouseenter", showTooltip)
+      .on("mousemove", moveTooltip)
+      .on("mouseleave", hideTooltip);
+
+    // Draw point markers
+    g.selectAll(".point-marker")
+      .data(pointFeatures)
+      .join("circle")
+      .attr("class", "point-marker")
+      .attr("r", 3)
+      .attr("cx", d => {
+        const coords = d.geometry.coordinates;
+        const projected = projection(coords);
+        return projected ? projected[0] : null;
+      })
+      .attr("cy", d => {
+        const coords = d.geometry.coordinates;
+        const projected = projection(coords);
+        return projected ? projected[1] : null;
+      })
+      .attr("fill", d => regionColors[d.properties.region] || "#666")
+      .attr("fill-opacity", 0.85)
+      .on("mouseenter", showTooltip)
+      .on("mousemove", moveTooltip)
+      .on("mouseleave", hideTooltip);
+
+    // Legend
+    const legendEl = document.getElementById("legend");
+    let legendHTML = "<h3>TCC Regions</h3>";
+    const regionCounts = {};
+    allFeatures.forEach(f => {
+      const r = f.properties.region;
+      regionCounts[r] = (regionCounts[r] || 0) + 1;
+    });
+    for (const [region, color] of Object.entries(regionColors)) {
+      const count = regionCounts[region] || 0;
+      legendHTML += `<div class="legend-item">
+        <div class="legend-swatch" style="background:${color}"></div>
+        <span>${region} (${count})</span>
+      </div>`;
+    }
+    legendEl.innerHTML = legendHTML;
+
+    // Info badge
+    const sizeKb = Math.round(JSON.stringify(topology).length / 1024);
+    document.getElementById("info").innerHTML =
+      `<strong>TCC-330</strong> &mdash; ${allFeatures.length} destinations &middot;
+       ${polygonFeatures.length} polygons &middot; ${pointFeatures.length} markers &middot;
+       ~${sizeKb} KB`;
   }
-  legendEl.innerHTML = legendHTML;
 
-  // Info
-  document.getElementById("info").innerHTML =
-    `<strong>TCC-330</strong> &mdash; ${allFeatures.length} destinations &middot;
-     ${allFeatures.length} features`;
+  // Toggle button handler — exposed on window so onclick attributes work
+  let activeBtn = "btn-full";
+  window.switchFile = async function(url, btnId) {
+    if (btnId === activeBtn) return;
+    document.getElementById(activeBtn).classList.remove("active");
+    document.getElementById(btnId).classList.add("active");
+    activeBtn = btnId;
+    await loadAndRender(url);
+  };
 
+  // Initial load
+  await loadAndRender("output/tcc-330.json");
 })();
 </script>
 </body>
