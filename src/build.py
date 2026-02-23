@@ -131,7 +131,8 @@ def _extract_feature(
     - ``"subunit"``           → :func:`~category_a.extract_subunit`
     - ``"admin1"``            → :func:`~category_b.extract_admin1`
     - ``"remainder"``         → :func:`~category_b.extract_remainder`
-    - ``"disputed_remainder"``/``"disputed_subtract"`` → :func:`~category_b.extract_disputed_remainder`
+    - ``"disputed_remainder"`` / ``"disputed_subtract"``
+      → :func:`~category_b.extract_disputed_remainder`
     - ``"clip"``              → :func:`~category_c.extract_clip`
     - ``"disputed"``          → :func:`~category_c.extract_disputed`
     - ``"island_bbox"``       → :func:`~category_c.extract_island_bbox`
@@ -205,7 +206,7 @@ def write_geojson(features: dict[int, TccFeature], output_path: Path) -> None:
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
+    with output_path.open("w") as f:
         json.dump(collection, f)
 
     size_mb = output_path.stat().st_size / (1024 * 1024)

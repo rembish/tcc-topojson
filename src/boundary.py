@@ -36,7 +36,7 @@ def load_boundary() -> MultiLineString | LineString:
         return _boundary_line
 
     path = DATA_DIR / "europe_asia_boundary.geojson"
-    with open(path) as f:
+    with path.open() as f:
         data = json.load(f)
 
     lines: list[LineString] = []
@@ -72,10 +72,7 @@ def _build_ordered_path(boundary: MultiLineString | LineString) -> list[tuple[fl
         return _ordered_path
 
     # Step 1: linemerge to connect segments that share exact endpoints
-    if boundary.geom_type == "MultiLineString":
-        merged = linemerge(boundary)
-    else:
-        merged = boundary
+    merged = linemerge(boundary) if boundary.geom_type == "MultiLineString" else boundary
 
     if merged.geom_type == "LineString":
         _ordered_path = list(merged.coords)
@@ -85,7 +82,7 @@ def _build_ordered_path(boundary: MultiLineString | LineString) -> list[tuple[fl
     lines: list[LineString] = list(merged.geoms)
 
     # Sort by southernmost latitude to start building from the south
-    lines.sort(key=lambda l: min(c[1] for c in l.coords))
+    lines.sort(key=lambda seg: min(c[1] for c in seg.coords))
 
     # Greedy nearest-neighbor: chain lines into a single coordinate path
     ordered_coords: list[tuple[float, float]] = list(lines[0].coords)
@@ -138,7 +135,7 @@ def _pt_dist(p1: tuple[float, float], p2: tuple[float, float]) -> float:
     Returns:
         Euclidean distance (degrees).
     """
-    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+    return float(((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5)
 
 
 def clip_to_europe(country_geom: Polygon | MultiPolygon) -> Polygon | MultiPolygon:
@@ -200,7 +197,7 @@ def _clip_by_boundary(
     ordered_coords = _build_ordered_path(boundary)
 
     # Get the bounds of the country (extended)
-    minx, miny, maxx, maxy = country_geom.bounds
+    minx, _miny, _maxx, _maxy = country_geom.bounds
     pad = 10
 
     first = ordered_coords[0]
@@ -223,7 +220,7 @@ def _clip_by_boundary(
         if not europe_polygon.is_valid:
             europe_polygon = europe_polygon.buffer(0)
         europe_result = country_geom.intersection(europe_polygon)
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Fallback: buffer-strip approach with ray-casting classification
         result = _fallback_clip(country_geom, boundary, side)
         if result is None or result.is_empty:
@@ -275,10 +272,7 @@ def _fallback_clip(
     Returns:
         Union of the classified pieces, or None if no pieces qualify.
     """
-    if boundary.geom_type == "MultiLineString":
-        merged = linemerge(boundary)
-    else:
-        merged = boundary
+    merged = linemerge(boundary) if boundary.geom_type == "MultiLineString" else boundary
 
     strip = merged.buffer(0.005)
     remainder = country_geom.difference(strip)

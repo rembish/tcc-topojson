@@ -38,7 +38,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "TCH", "ANN"]
-ignore = ["ANN101", "ANN102", "ANN401"]
+ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 "validate.py" = ["ANN"]
@@ -59,6 +59,8 @@ module = [
     "topojson.*",
     "pyproj",
     "pyproj.*",
+    "shapely",
+    "shapely.*",
 ]
 ignore_missing_imports = true
 

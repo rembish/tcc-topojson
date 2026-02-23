@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from shapely.geometry import MultiPolygon, Polygon, mapping
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import geopandas as gpd
-    from shapely.geometry.base import BaseGeometry
 
     from .types import Bbox, GeoJsonProperties, TccDestination, TccFeature
 
@@ -98,7 +98,7 @@ def load_shapefile(path: Path) -> gpd.GeoDataFrame:
     Returns:
         A GeoDataFrame with all features from the shapefile.
     """
-    import geopandas as gpd  # noqa: PLC0415
+    import geopandas as gpd
 
     return gpd.read_file(path)
 

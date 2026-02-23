@@ -5,7 +5,7 @@ PIP := $(VENV)/bin/pip
 
 .PHONY: all venv download build simplify validate dist clean format lint typecheck test check help
 
-all: venv download build simplify validate dist
+all: venv check download build simplify validate dist
 
 venv: $(VENV)/bin/activate
 
@@ -55,7 +55,7 @@ help:
 	@echo "TCC TopoJSON — available targets:"
 	@echo ""
 	@echo "  Pipeline:"
-	@echo "    all          Run the full pipeline: venv download build simplify validate dist"
+	@echo "    all          Run full pipeline with checks: venv check download build simplify validate dist"
 	@echo "    venv         Create .venv and install all dependencies (incl. dev)"
 	@echo "    download     Download Natural Earth shapefiles and Europe-Asia boundary"
 	@echo "    build        Run Python build script → output/merged.geojson"

@@ -16,7 +16,7 @@ def validate_geojson(path: Path) -> bool:
 
     Checks:
     - Exactly 330 features present.
-    - All tcc_index values are unique and span 1–330.
+    - All tcc_index values are unique and span 1-330.
     - All required properties are non-null on every feature.
     - Every feature has a geometry.
 
@@ -28,7 +28,7 @@ def validate_geojson(path: Path) -> bool:
     """
     print(f"Validating {path}...")
 
-    with open(path) as f:
+    with path.open() as f:
         data = json.load(f)
 
     features = data.get("features", [])
@@ -70,7 +70,8 @@ def validate_geojson(path: Path) -> bool:
 
     if missing:
         print(
-            f"  Missing indices ({len(missing)}): {missing[:20]}{'...' if len(missing) > 20 else ''}"
+            f"  Missing indices ({len(missing)}): {missing[:20]}"
+            f"{'...' if len(missing) > 20 else ''}"
         )
     if extra:
         print(f"  Extra indices: {extra}")
@@ -103,7 +104,7 @@ def validate_topojson(path: Path) -> bool:
     """
     print(f"\nValidating {path}...")
 
-    with open(path) as f:
+    with path.open() as f:
         data = json.load(f)
 
     # TopoJSON has objects with geometries

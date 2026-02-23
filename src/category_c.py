@@ -6,7 +6,6 @@ Antarctic wedges, and point markers.
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING, Any
 
 from shapely.geometry import MultiPolygon, Point, Polygon
@@ -90,7 +89,7 @@ def extract_clip(
     # Subtract other TCC features if specified
     subtract_indices: list[int] = dest.get("subtract_indices", [])
     if subtract_indices and built:
-        from shapely.geometry import shape as shp  # noqa: PLC0415
+        from shapely.geometry import shape as shp
 
         subtract_geoms = []
         for idx in subtract_indices:
@@ -140,7 +139,7 @@ def extract_disputed(
     Returns:
         A GeoJSON Feature dict, or None if the disputed feature is not found.
     """
-    ne_name: str = dest.get("ne_name", dest["name"])
+    ne_name: str = str(dest.get("ne_name", dest["name"]))
     also_merge: list[str] = dest.get("also_merge", [])
 
     geom = _find_disputed_geom(ne_name, disputed_gdf)
@@ -264,7 +263,7 @@ def extract_group_remainder(
     for idx in subtract_indices:
         feat = built_features.get(idx)
         if feat:
-            from shapely.geometry import shape  # noqa: PLC0415
+            from shapely.geometry import shape
 
             subtract_geoms.append(shape(feat["geometry"]))
 

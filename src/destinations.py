@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .types import TccDestination
+if TYPE_CHECKING:
+    from .types import TccDestination
 
 # Each destination tuple fields (positional):
 #   [0] tcc_index : int          — TCC destination number (1-330)
