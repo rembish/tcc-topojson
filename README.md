@@ -1,6 +1,6 @@
-# TCC TopoJSON
+# tcc-topojson
 
-[![npm](https://img.shields.io/npm/v/tcc-topojson)](https://www.npmjs.com/package/tcc-topojson)
+[![npm](https://img.shields.io/npm/v/@rembish/tcc-topojson)](https://www.npmjs.com/package/@rembish/tcc-topojson)
 
 TopoJSON world map with **330 polygons** matching the [Travelers' Century Club](https://travelerscenturyclub.org/) destination list. No existing open-source project provides this — NomadMania's regions are proprietary, TCC publishes no polygon data, and `topojson/world-atlas` is countries-only.
 
@@ -20,23 +20,23 @@ In `tcc-330-markers.json` the 83 smallest destinations (Nauru, Liechtenstein, Gr
 ### CDN (jsDelivr)
 
 ```
-https://cdn.jsdelivr.net/npm/tcc-topojson@1.1.0/tcc-330.json
-https://cdn.jsdelivr.net/npm/tcc-topojson@1.1.0/tcc-330-markers.json
+https://cdn.jsdelivr.net/npm/@rembish/tcc-topojson@1.2.0/tcc-330.json
+https://cdn.jsdelivr.net/npm/@rembish/tcc-topojson@1.2.0/tcc-330-markers.json
 ```
 
 ### npm
 
 ```sh
-npm install tcc-topojson
+npm install @rembish/tcc-topojson
 ```
 
-Package page: [npmjs.com/package/tcc-topojson](https://www.npmjs.com/package/tcc-topojson)
+Package page: [npmjs.com/package/@rembish/tcc-topojson](https://www.npmjs.com/package/@rembish/tcc-topojson)
 
 ### JavaScript
 
 ```js
 const resp = await fetch(
-  "https://cdn.jsdelivr.net/npm/tcc-topojson@1.1.0/tcc-330.json"
+  "https://cdn.jsdelivr.net/npm/@rembish/tcc-topojson@1.2.0/tcc-330.json"
 );
 const topology = await resp.json();
 ```
@@ -66,7 +66,7 @@ svg.selectAll("path")
 import { feature } from "topojson-client";
 
 const resp = await fetch(
-  "https://cdn.jsdelivr.net/npm/tcc-topojson@1.1.0/tcc-330-markers.json"
+  "https://cdn.jsdelivr.net/npm/@rembish/tcc-topojson@1.2.0/tcc-330-markers.json"
 );
 const topology = await resp.json();
 
@@ -179,6 +179,10 @@ The viewer renders all 330 features coloured by TCC region. A **Full / Markers**
 - [Trubetskoy Europe–Asia boundary](https://sashamaps.net/docs/resources/europe-asia-boundary/) — Sasha Trubetskoy, free with attribution
 
 ## Changelog
+
+### 1.2.0
+
+- Publish under `@rembish/tcc-topojson` scoped npm package
 
 ### 1.1.0
 
